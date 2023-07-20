@@ -23,10 +23,49 @@ const kGmailQueryBase = "from:(Job Alerts from Google)";
 const kSpreadsheetId = "1JignDYAjNdLCyieHHJUrhe3zR6d4n6pIkvLhRY45jHs";
 //---------------------------------------------------------------------------
 
+const kVersion = 1;
+const kVersionRange = "A1:A2";
+const kUserRange = "B:B";
+
+// Read the version of the storage sheet. If there is no version, assume it's a
+// new sheet and needs to be set up for the first time. If there is a value, do
+// nothing.
+function maybeInitStorage(sheet) {
+  let version = sheet.getRange(kVersionRange)
+      .offset(1, 0).getValue();
+  if (version) {
+    return;
+  }
+  sheet.getRange(kVersionRange)
+    .setValues([
+      ["Version"],
+      [kVersion]
+    ]);
+  sheet.getRange(kUserRange)
+    .offset(0, 0, 3, 1)
+    .setValues([
+      ["Rotation members"],
+      ["one@example.com"],
+      ["two@example.com"],
+    ]);
+}
+
 // Parses data from the "Storage" sheet into a nice object.
 function readPersistentStorage(sheet) {
+  let version = sheet
+      .getRange(kVersionRange)
+      .offset(1, 0)
+      .getValue();
+  if (!version) {
+    throw new Error("Storage sheet does not name its version");
+  }
+  if (version != kVersion) {
+    throw new Error("Storage sheet's version is unknown: " + version);
+  }
+
   let users = sheet
-      .getRange("A2:A")
+      .getRange(kUserRange)
+      .offset(1, 0)
       .getValues()
       .map(row => row[0])
       .filter(s => s.length > 0);
@@ -40,10 +79,9 @@ function readPersistentStorage(sheet) {
 }
 
 function writePersistentStorage(data, sheet) {
-  sheet.getRange("A1").setValue("Rotation Members");
-  let users_range = sheet.getRange("A2:A");
-  users_range = users_range.offset(0, 0, data.users.length, 1);
-  users_range.setValues(data.users.map(s => [s]));
+  sheet.getRange(kUserRange)
+    .offset(1, 0, data.users.length, 1)
+    .setValues(data.users.map(s => [s]));
 }
 
 function writeGmailThreadToRow(thread, sheet, row) {
@@ -85,7 +123,9 @@ function main() {
   storage_sheet.setTabColor('red');
   export_sheet.setTabColor('red');
 
+  maybeInitStorage(storage_sheet);
   let storage = readPersistentStorage(storage_sheet);
+
   let gmail_query = kGmailQueryBase + " -label:" + kGmailProcessedLabel;
   let threads = GmailApp.search(gmail_query);
   exportThreads(threads, processed_label, export_sheet);
